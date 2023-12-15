@@ -23,8 +23,23 @@ const (
 	UnsupportedRolloutManagerNamespaceScoped = "when Subscription has environment variable NAMESPACE_SCOPED_ARGO_ROLLOUTS set to False, there may not exist any namespace-scoped RolloutManagers: only a single cluster-scoped RolloutManager is supported"
 )
 
-func setRolloutsLabels(obj *metav1.ObjectMeta) {
+func setRolloutsLabelsAndAnnotationsToController(obj *metav1.ObjectMeta, cr *rolloutsmanagerv1alpha1.RolloutManager) {
+
+	setRolloutsLabelsAndAnnotations(obj)
+
+	if cr.Spec.ControllerMetadata != nil {
+		for k, v := range cr.Spec.ControllerMetadata.Labels {
+			obj.Labels[k] = v
+		}
+		for k, v := range cr.Spec.ControllerMetadata.Annotations {
+			obj.Annotations[k] = v
+		}
+	}
+}
+
+func setRolloutsLabelsAndAnnotations(obj *metav1.ObjectMeta) {
 	obj.Labels = map[string]string{}
+	obj.Annotations = map[string]string{}
 	obj.Labels["app.kubernetes.io/name"] = DefaultArgoRolloutsResourceName
 	obj.Labels["app.kubernetes.io/part-of"] = DefaultArgoRolloutsResourceName
 	obj.Labels["app.kubernetes.io/component"] = DefaultArgoRolloutsResourceName
