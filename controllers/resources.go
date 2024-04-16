@@ -24,7 +24,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsServiceAccount(ctx context.C
 			Namespace: cr.Namespace,
 		},
 	}
-	setRolloutsLabels(&sa.ObjectMeta)
+	setRolloutsLabelsAndAnnotations(&sa.ObjectMeta)
 
 	if err := fetchObject(ctx, r.Client, cr.Namespace, sa.Name, sa); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -56,7 +56,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsRole(ctx context.Context, cr
 			Namespace: cr.Namespace,
 		},
 	}
-	setRolloutsLabels(&role.ObjectMeta)
+	setRolloutsLabelsAndAnnotations(&role.ObjectMeta)
 
 	if err := fetchObject(ctx, r.Client, cr.Namespace, role.Name, role); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -92,7 +92,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsClusterRole(ctx context.Cont
 			Name: DefaultArgoRolloutsResourceName,
 		},
 	}
-	setRolloutsLabels(&clusterRole.ObjectMeta)
+	setRolloutsLabelsAndAnnotations(&clusterRole.ObjectMeta)
 
 	if err := fetchObject(ctx, r.Client, "", clusterRole.Name, clusterRole); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -131,7 +131,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsRoleBinding(ctx context.Cont
 			Namespace: cr.Namespace,
 		},
 	}
-	setRolloutsLabels(&expectedRoleBinding.ObjectMeta)
+	setRolloutsLabelsAndAnnotationsToController(&expectedRoleBinding.ObjectMeta, cr)
 
 	expectedRoleBinding.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.GroupName,
@@ -191,7 +191,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsClusterRoleBinding(ctx conte
 			Name: DefaultArgoRolloutsResourceName,
 		},
 	}
-	setRolloutsLabels(&expectedClusterRoleBinding.ObjectMeta)
+	setRolloutsLabelsAndAnnotations(&expectedClusterRoleBinding.ObjectMeta)
 
 	expectedClusterRoleBinding.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.GroupName,
@@ -345,7 +345,7 @@ func (r *RolloutManagerReconciler) reconcileRolloutsMetricsService(ctx context.C
 			Namespace: cr.Namespace,
 		},
 	}
-	setRolloutsLabels(&expectedSvc.ObjectMeta)
+	setRolloutsLabelsAndAnnotationsToController(&expectedSvc.ObjectMeta, cr)
 	// overwrite the annotations for Rollouts Metrics Service
 	expectedSvc.ObjectMeta.Labels["app.kubernetes.io/name"] = DefaultArgoRolloutsMetricsServiceName
 	expectedSvc.ObjectMeta.Labels["app.kubernetes.io/component"] = "server"

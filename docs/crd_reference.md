@@ -78,3 +78,23 @@ spec:
 ```
 
 
+### RolloutManager example with metadata for the controller
+
+You can provide labels and annotation for the Argo Rollouts controller.
+
+``` yaml
+``` yaml
+apiVersion: argoproj.io/v1alpha1
+kind: RolloutManager
+metadata:
+  name: argo-rollout
+  labels:
+    example: nodeplacement-example
+spec:
+  controllerMetadata:
+    labels:
+      mylabel: "true"
+    annotations:
+      myannotation: "myvalue"
+```
+

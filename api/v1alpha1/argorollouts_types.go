@@ -43,6 +43,8 @@ type RolloutManagerSpec struct {
 
 	// NamespaceScoped lets you specify if RolloutManager has to watch a namespace or the whole cluster
 	NamespaceScoped bool `json:"namespaceScoped,omitempty"`
+	// Metadata to apply to the controller resources
+	ControllerMetadata *ResourceMetadata `json:"controllerMetadata,omitempty"`
 }
 
 // ArgoRolloutsNodePlacementSpec is used to specify NodeSelector and Tolerations for Rollouts workloads
@@ -91,6 +93,15 @@ const (
 	RolloutManagerReasonMultipleClusterScopedRolloutManager = "MultipleClusterScopedRolloutManager"
 	RolloutManagerReasonInvalidScoped                       = "InvalidRolloutManagerScope"
 )
+
+type ResourceMetadata struct {
+	// Annotations to add to the resources during its creation.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Labels to add to the resources during its creation.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+}
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
