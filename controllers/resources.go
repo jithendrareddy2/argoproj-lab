@@ -6,9 +6,11 @@ import (
 	"reflect"
 
 	rolloutsmanagerv1alpha1 "github.com/argoproj-labs/argo-rollouts-manager/api/v1alpha1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	crdv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -376,15 +378,81 @@ func (r *RolloutManagerReconciler) reconcileRolloutsMetricsService(ctx context.C
 		}
 
 		log.Info(fmt.Sprintf("Creating Service %s", expectedSvc.Name))
-		return r.Client.Create(ctx, expectedSvc)
+		if err := r.Client.Create(ctx, expectedSvc); err != nil {
+			log.Error(err, "Error creating Service", "Name", expectedSvc.Name)
+			return err
+		}
+		return nil
 	}
 
 	if !reflect.DeepEqual(actualSvc.Spec.Ports, expectedSvc.Spec.Ports) {
 		log.Info(fmt.Sprintf("Ports of Service %s do not match the expected state, hence updating it", actualSvc.Name))
 		actualSvc.Spec.Ports = expectedSvc.Spec.Ports
-		return r.Client.Create(ctx, actualSvc)
+		if err := r.Client.Update(ctx, actualSvc); err != nil {
+			log.Error(err, "Error updating Ports of Service", "Name", actualSvc.Name)
+			return err
+		}
+		return nil
 	}
 
+	// Checks if user is using the Prometheus operator by checking CustomResourceDefinition for ServiceMonitor
+	smCRD := &crdv1.CustomResourceDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "servicemonitors.monitoring.coreos.com",
+		},
+	}
+
+	if err := fetchObject(ctx, r.Client, smCRD.Namespace, smCRD.Name, smCRD); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get the ServiceMonitor %s : %s", smCRD.Name, err)
+		}
+		return nil
+	}
+
+	// Create ServiceMonitor for Rollouts metrics
+	existingServiceMonitor := &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      actualSvc.Name,
+			Namespace: actualSvc.Namespace,
+		},
+	}
+	if err := fetchObject(ctx, r.Client, cr.Namespace, actualSvc.Name, existingServiceMonitor); err != nil {
+		if apierrors.IsNotFound(err) {
+			err = r.createServiceMonitorIfAbsent(ctx, cr.Namespace, cr, actualSvc.Name, actualSvc.Name)
+			if err != nil {
+				return err
+			}
+		} else {
+			log.Error(err, "Error querying for ServiceMonitor", "Namespace", cr.Namespace, "Name", actualSvc.Name)
+			return err
+		}
+	} else {
+		log.Info("A ServiceMonitor instance already exists",
+			"Namespace", existingServiceMonitor.Namespace, "Name", existingServiceMonitor.Name)
+
+		// Check if existing ServiceMonitor matches expected content
+		if !serviceMonitorMatches(existingServiceMonitor, actualSvc.Name) {
+			log.Info("Updating existing ServiceMonitor instance",
+				"Namespace", existingServiceMonitor.Namespace, "Name", existingServiceMonitor.Name)
+
+			// Update ServiceMonitor with expected content
+			existingServiceMonitor.Spec.Selector.MatchLabels = map[string]string{
+				"app.kubernetes.io/name": actualSvc.Name,
+			}
+			existingServiceMonitor.Spec.Endpoints = []monitoringv1.Endpoint{
+				{
+					Port: "metrics",
+				},
+			}
+
+			if err := r.Client.Update(ctx, existingServiceMonitor); err != nil {
+				log.Error(err, "Error updating existing ServiceMonitor instance",
+					"Namespace", existingServiceMonitor.Namespace, "Name", existingServiceMonitor.Name)
+				return err
+			}
+		}
+		return nil
+	}
 	return nil
 }
 
@@ -933,4 +1001,63 @@ func GetAggregateToViewPolicyRules() []rbacv1.PolicyRule {
 			},
 		},
 	}
+}
+
+func (r *RolloutManagerReconciler) createServiceMonitorIfAbsent(ctx context.Context, namespace string, rolloutManager *rolloutsmanagerv1alpha1.RolloutManager, name, serviceMonitorLabel string) error {
+	serviceMonitor := &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name": serviceMonitorLabel,
+				},
+			},
+			Endpoints: []monitoringv1.Endpoint{
+				{
+					Port: "metrics",
+				},
+			},
+		},
+	}
+	log.Info("Creating a new ServiceMonitor instance",
+		"Namespace", serviceMonitor.Namespace, "Name", serviceMonitor.Name)
+
+	// Set the RolloutManager instance as the owner and controller
+	if err := controllerutil.SetControllerReference(rolloutManager, serviceMonitor, r.Scheme); err != nil {
+		log.Error(err, "Error setting read role owner ref",
+			"Namespace", serviceMonitor.Namespace, "Name", serviceMonitor.Name, "RolloutManager Name", rolloutManager.Name)
+		return err
+	}
+
+	err := r.Client.Create(ctx, serviceMonitor)
+	if err != nil {
+		log.Error(err, "Error creating a new ServiceMonitor instance",
+			"Namespace", serviceMonitor.Namespace, "Name", serviceMonitor.Name)
+		return err
+	}
+
+	return nil
+
+}
+
+func serviceMonitorMatches(sm *monitoringv1.ServiceMonitor, matchLabel string) bool {
+	// Check if labels match
+	labels := sm.Spec.Selector.MatchLabels
+	if val, ok := labels["app.kubernetes.io/name"]; ok {
+		if val != matchLabel {
+			return false
+		}
+	} else {
+		return false
+	}
+
+	// Check if endpoints match
+	if sm.Spec.Endpoints[0].Port != "metrics" {
+		return false
+	}
+
+	return true
 }

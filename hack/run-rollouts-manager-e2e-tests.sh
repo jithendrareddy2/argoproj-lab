@@ -8,6 +8,15 @@ SCRIPTPATH="$(
 cd "$SCRIPTPATH/.."
 
 set -o pipefail
+
+# Check if the CRD exists
+kubectl get crd/servicemonitors.monitoring.coreos.com &> /dev/null
+retVal=$?
+if [ $retVal -ne 0 ]; then
+    # If the CRD is not found, apply the CRD YAML
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/release-0.52/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+fi
+
 set -ex
 
 if [ "$NAMESPACE_SCOPED_ARGO_ROLLOUTS" == "true" ]; then
@@ -36,7 +45,7 @@ if [ -f "/tmp/e2e-operator-run.log" ]; then
 
   UNEXPECTED_ERRORS_FOUND_TEXT=`cat /tmp/e2e-operator-run.log | grep "ERROR" | grep -v "because it is being terminated" | grep -v "the object has been modified; please apply your changes to the latest version and try again" | grep -v "unable to fetch" | grep -v "StorageError"`
   UNEXPECTED_ERRORS_COUNT=`echo $UNEXPECTED_ERRORS_FOUND_TEXT | grep "ERROR" | wc -l`
-
+  
   if [ "$UNEXPECTED_ERRORS_COUNT" != "0" ]; then
       echo "Unexpected errors found: $UNEXPECTED_ERRORS_FOUND_TEXT"
       exit 1
